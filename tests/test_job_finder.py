@@ -148,3 +148,9 @@ def test_allowed_location():
     assert jf.allowed_location(loc(""), CFG)
     assert jf.allowed_location(loc("Saudi Arabia"), CFG)
     assert not jf.allowed_location(loc(job_location="Tabuk, Saudi Arabia"), CFG)
+
+
+def test_entry_level_boost():
+    cands = [{"title": "Entry-Level AI Engineer | Fresh Grad | Tamheer Eligible", "description": "Python and SQL."}]
+    jf.score_keywords(cands, CFG)
+    assert 8 <= cands[0]["score"] <= 10

@@ -209,12 +209,16 @@ def candidates(jobs: list[dict], cfg: dict, state: dict, now: datetime) -> list[
 
 
 # --------------------------------------------------------------------------- score
+ENTRY_LEVEL_TERMS = ("fresh grad", "graduate", "entry level", "entry-level", "junior", "intern", "internship",
+                     "trainee", "tamheer", "تمهير", "حديث تخرج")
+
+
 def score_keywords(cands: list[dict], cfg: dict) -> None:
     for c in cands:
         text = f"{c['title']} {c['description']}".lower()
         hits = [k for k in cfg["skills_keywords"] if k in text]
         title_bonus = 2 if re.search(r"data|machine learning|\bml\b|\bai\b|analyst|scientist", c["title"].lower()) else 0
-        entry_bonus = 1 if re.search(r"junior|entry|graduate|intern|trainee|fresh", text) else 0
+        entry_bonus = 3 if any(t in text for t in ENTRY_LEVEL_TERMS) else 0
         # base 2: the job already matched a targeted search query
         c["score"] = min(10, 2 + len(hits) + title_bonus + entry_bonus)
         c["reason"] = f"Keyword match: {', '.join(hits[:5]) or 'none'}."
