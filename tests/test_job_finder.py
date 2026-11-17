@@ -115,3 +115,36 @@ def test_claude_scoring_parses_reply(monkeypatch):
     cands = jf.candidates([job("1")], CFG, empty_state(), NOW)
     assert jf.score(cands, CFG, "key", []) == "claude"
     assert cands[0]["score"] == 8 and cands[0]["reason"].startswith("Strong")
+
+
+def test_posted_at_formats():
+    assert jf.posted_at({"job_posted_at": "3 days ago"}, NOW) == NOW - timedelta(days=3)
+    assert jf.posted_at({"job_posted_at": "5 hours ago"}, NOW) == NOW - timedelta(hours=5)
+    assert jf.posted_at({"job_posted_at": "2 weeks ago"}, NOW) == NOW - timedelta(weeks=2)
+    assert jf.posted_at({"job_posted_at": "Just now"}, NOW) == NOW
+    assert jf.posted_at({"job_posted_at_datetime_utc": "2026-11-15T10:00:00"}, NOW) == datetime(
+        2026, 11, 15, 10, 0, tzinfo=timezone.utc)
+    assert jf.posted_at({}, NOW) is None
+
+
+def test_job_without_date():
+    j = job()
+    del j["job_posted_at_timestamp"]
+    assert jf.classify(j, {**CFG, "date_posted": "week"}, NOW) == (True, [])
+    ok, missing = jf.classify(j, {**CFG, "date_posted": "all"}, NOW)
+    assert not ok and "posting date" in missing
+    assert jf.candidates([j], CFG, empty_state(), NOW)[0]["posted"] == "this week"
+
+
+def test_allowed_location():
+    def loc(city="", remote=False, **kw):
+        return {"job_city": city, "job_is_remote": remote, **kw}
+
+    assert jf.allowed_location(loc("Riyadh"), CFG)
+    assert jf.allowed_location(loc("الظهران"), CFG)
+    assert jf.allowed_location(loc("Jeddah"), CFG)
+    assert not jf.allowed_location(loc("Tabuk"), CFG)
+    assert jf.allowed_location(loc("Tabuk", True), CFG)
+    assert jf.allowed_location(loc(""), CFG)
+    assert jf.allowed_location(loc("Saudi Arabia"), CFG)
+    assert not jf.allowed_location(loc(job_location="Tabuk, Saudi Arabia"), CFG)

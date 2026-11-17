@@ -72,6 +72,7 @@ def fetch_jobs(cfg: dict, api_key: str) -> tuple[list[dict], list[str]]:
     headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
     jobs: dict[str, dict] = {}
     errors: list[str] = []
+    logged_fields = False
     for query in cfg["queries"]:
         params = {"query": query, "country": cfg["country"], "date_posted": cfg["date_posted"], "num_pages": 1}
         try:
@@ -80,6 +81,9 @@ def fetch_jobs(cfg: dict, api_key: str) -> tuple[list[dict], list[str]]:
             data = r.json().get("data", [])
             items = data.get("jobs", []) if isinstance(data, dict) else data
             log.info("query %r -> %d jobs", query, len(items))
+            if items and not logged_fields:
+                log.info("JSearch job fields: %s", sorted(items[0].keys()))
+                logged_fields = True
             for j in items:
                 if j.get("job_id"):
                     jobs.setdefault(j["job_id"], j)
@@ -91,17 +95,61 @@ def fetch_jobs(cfg: dict, api_key: str) -> tuple[list[dict], list[str]]:
 
 
 # --------------------------------------------------------------------------- filter
-def posted_at(job: dict) -> datetime | None:
-    ts = job.get("job_posted_at_timestamp")
-    if ts:
-        return datetime.fromtimestamp(int(ts), tz=timezone.utc)
-    raw = job.get("job_posted_at_datetime_utc")
-    if raw:
-        try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            return None
+_RELATIVE_RE = re.compile(r"(\d+)\s*\+?\s*(minute|min|hour|hr|day|week|month)s?\b", re.IGNORECASE)
+_UNIT_SECONDS = {"minute": 60, "min": 60, "hour": 3600, "hr": 3600, "day": 86400, "week": 604800, "month": 2592000}
+
+
+def posted_at(job: dict, now: datetime | None = None) -> datetime | None:
+    now = now or datetime.now(timezone.utc)
+    for key in ("job_posted_at_timestamp", "posted_at_timestamp"):
+        ts = job.get(key)
+        if ts:
+            try:
+                return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+            except (ValueError, TypeError, OverflowError, OSError):
+                pass
+    for key in ("job_posted_at_datetime_utc", "job_posted_at_datetime", "posted_at", "date_posted"):
+        raw = job.get(key)
+        if raw and isinstance(raw, str):
+            try:
+                dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    for key in ("job_posted_at", "posted_at", "job_posted_human_readable"):
+        raw = job.get(key)
+        if not raw or not isinstance(raw, str):
+            continue
+        text = raw.strip().lower()
+        if "just now" in text or "today" in text:
+            return now
+        if "yesterday" in text:
+            return now - timedelta(days=1)
+        m = _RELATIVE_RE.search(text)
+        if m:
+            return now - timedelta(seconds=int(m.group(1)) * _UNIT_SECONDS[m.group(2).lower()])
     return None
+
+
+COUNTRY_WORDS = ("saudi arabia", "ksa", "المملكة العربية السعودية", "السعودية")
+
+
+def location(job: dict) -> str:
+    return (job.get("job_city") or job.get("job_location") or job.get("job_state")
+            or ("Remote" if job.get("job_is_remote") else "Saudi Arabia"))
+
+
+def allowed_location(job: dict, cfg: dict) -> bool:
+    allowed = cfg.get("allowed_locations")
+    if not allowed or job.get("job_is_remote"):
+        return True
+    text = " ".join(str(job.get(k) or "") for k in ("job_city", "job_state", "job_location")).lower()
+    stripped = text
+    for w in COUNTRY_WORDS:
+        stripped = stripped.replace(w, "")
+    if not stripped.replace(",", "").strip():
+        return True
+    return any(a.lower() in text for a in allowed)
 
 
 def is_senior(job: dict, cfg: dict) -> bool:
@@ -116,9 +164,10 @@ def needs_3plus_years(job: dict) -> bool:
 def classify(job: dict, cfg: dict, now: datetime) -> tuple[bool, list[str]]:
     """Return (verified, missing) using only data from the API."""
     missing = []
-    when = posted_at(job)
+    when = posted_at(job, now)
     if not when:
-        missing.append("posting date")
+        if cfg.get("date_posted") not in ("today", "3days", "week"):
+            missing.append("posting date")
     elif now - when > timedelta(days=cfg["max_age_days"]):
         missing.append("recent posting date")
     if len((job.get("job_description") or "").strip()) < 100:
@@ -134,27 +183,27 @@ def candidates(jobs: list[dict], cfg: dict, state: dict, now: datetime) -> list[
         jid = j["job_id"]
         if jid in state["sent"]:
             continue
-        if is_senior(j, cfg) or needs_3plus_years(j):
+        if is_senior(j, cfg) or needs_3plus_years(j) or not allowed_location(j, cfg):
             continue
         verified, missing = classify(j, cfg, now)
         maybe_days = state["maybe"].get(jid, {}).get("streak", 0)
         if not verified and maybe_days >= 2:
             continue  # a Maybe job is shown at most 2 days in a row
-        when = posted_at(j)
+        when = posted_at(j, now)
         out.append({
             "id": jid,
             "title": j.get("job_title") or "",
-            "company": j.get("employer_name") or "",
-            "city": j.get("job_city") or ("Remote" if j.get("job_is_remote") else ""),
+            "company": j.get("employer_name") or j.get("company_name") or "Unknown company",
+            "city": location(j),
             "remote": bool(j.get("job_is_remote")),
-            "posted": when.astimezone(RIYADH).strftime("%Y-%m-%d") if when else "unknown",
+            "posted": when.astimezone(RIYADH).strftime("%Y-%m-%d") if when else "this week",
             "link": j.get("job_apply_link") or j.get("job_google_link") or "",
             "description": (j.get("job_description") or "")[: cfg["description_chars"]],
             "verified": verified,
             "missing": missing,
         })
     # verified first, then newest first; only the top N are scored to limit cost
-    out.sort(key=lambda c: c["posted"] if c["posted"] != "unknown" else "", reverse=True)
+    out.sort(key=lambda c: c["posted"] if c["posted"] != "this week" else "", reverse=True)
     out.sort(key=lambda c: not c["verified"])
     return out[: cfg["max_jobs_to_score"]]
 
