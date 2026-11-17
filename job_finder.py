@@ -28,7 +28,7 @@ import requests
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
 STATE_PATH = ROOT / "data" / "sent_jobs.json"
-JSEARCH_URL = "https://jsearch.p.rapidapi.com/search"
+JSEARCH_URL = "https://jsearch.p.rapidapi.com/search-v2"
 RIYADH = timezone(timedelta(hours=3))
 
 log = logging.getLogger("job_finder")
