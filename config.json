@@ -1,0 +1,18 @@
+{
+  "queries": [
+    "junior data analyst in Saudi Arabia",
+    "data scientist OR machine learning engineer in Saudi Arabia",
+    "AI engineer entry level in Saudi Arabia"
+  ],
+  "country": "sa",
+  "date_posted": "week",
+  "max_age_days": 7,
+  "min_score": 6,
+  "max_jobs_to_score": 20,
+  "max_maybe": 3,
+  "description_chars": 1500,
+  "model": "claude-haiku-5-5",
+  "profile": "Final-year Computer Science and Data Science student at the University of Hail, based in Riyadh. Skills: Python, SQL, machine learning (scikit-learn, LightGBM), deep learning basics, Tableau, FastAPI, Docker, MLOps. Certificates: IBM Data Science Professional, Google Data Analytics, Machine Learning Specialization (DeepLearning.AI/Stanford), MLOps (Saudi Digital Academy), Samsung Innovation Campus AI. Looking for entry-level or junior roles (0-2 years) in data analysis, data science, machine learning or AI engineering, in Riyadh or remote.",
+  "skills_keywords": ["python", "sql", "machine learning", "data analysis", "data science", "tableau", "power bi", "statistics", "pandas", "scikit-learn", "deep learning", "nlp", "ai", "fastapi", "docker", "mlops", "excel"],
+  "senior_title_words": ["senior", "sr.", "lead", "principal", "manager", "head", "director", "architect", "staff"]
+}
